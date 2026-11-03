@@ -16,7 +16,12 @@
 
   <style>
     body { font-family: 'Inter', sans-serif; user-select: none; -webkit-user-select: none; overflow: hidden; }
-    #map { height: 100vh; width: 100vw; z-index: 1; background: #0f172a; }
+    #map { height: 100vh; width: 100vw; z-index: 1; background: #e5e7eb; }
+    #map.dark-tiles { background: #0f172a; }
+    /* Mod gelap tanpa API key: songsangkan warna tile OSM menggunakan penapis CSS */
+    #map.dark-tiles .leaflet-tile-pane {
+      filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.92) saturate(0.8);
+    }
     .leaflet-control-zoom { display: none; }
     .car-marker-container { transition: transform 0.25s linear; transform-origin: center center; }
 
@@ -39,11 +44,12 @@
     }
     .leaflet-popup-tip { background: #1e293b !important; }
     .leaflet-popup-content { margin: 8px 10px !important; }
+    #search-input { user-select: text; -webkit-user-select: text; }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 h-screen w-screen relative overflow-hidden flex flex-col">
 
-  <div id="map" class="absolute inset-0"></div>
+  <div id="map" class="absolute inset-0 dark-tiles"></div>
 
   <!-- Brand -->
   <div class="absolute top-1.5 left-0 right-0 z-30 flex justify-center pointer-events-none">
@@ -114,12 +120,19 @@
   </div>
 
   <!-- Right controls -->
-  <div class="absolute bottom-28 right-4 z-20 pointer-events-auto flex flex-col space-y-3 items-end">
+  <div class="absolute bottom-28 right-4 z-20 pointer-events-auto flex flex-col space-y-2.5 items-end">
     <button onclick="centerOnVehicle()" class="w-12 h-12 rounded-2xl bg-slate-900/90 border border-slate-700 text-slate-200 shadow-xl flex items-center justify-center hover:bg-cyan-700 hover:text-white active:scale-95 transition" title="Fokus kenderaan">
       <i class="fa-solid fa-location-crosshairs text-lg"></i>
     </button>
     <button onclick="toggleMapTheme()" class="w-12 h-12 rounded-2xl bg-slate-900/90 border border-slate-700 text-slate-200 shadow-xl flex items-center justify-center hover:bg-cyan-700 hover:text-white active:scale-95 transition" title="Gelap / Terang">
       <i id="theme-icon" class="fa-solid fa-moon text-lg"></i>
+    </button>
+    <button onclick="openSearch()" class="w-12 h-12 rounded-2xl bg-cyan-600 border border-cyan-400/60 text-white shadow-xl flex items-center justify-center hover:bg-cyan-500 active:scale-95 transition" title="Cari destinasi">
+      <i class="fa-solid fa-magnifying-glass text-lg"></i>
+    </button>
+    <button id="btn-gps-mode" onclick="toggleGpsMode()" class="px-3.5 py-2.5 rounded-2xl bg-slate-900/90 border border-slate-700 text-emerald-400 text-xs font-bold shadow-xl flex items-center space-x-2 hover:bg-slate-800 active:scale-95 transition">
+      <i class="fa-solid fa-satellite-dish"></i>
+      <span id="gps-label">GPS: MATI</span>
     </button>
     <button id="btn-pin-mode" onclick="togglePinDropMode()" class="px-3.5 py-2.5 rounded-2xl bg-slate-900/90 border border-slate-700 text-amber-400 text-xs font-bold shadow-xl flex items-center space-x-2 hover:bg-slate-800 active:scale-95 transition">
       <i class="fa-solid fa-map-pin"></i>
@@ -149,13 +162,13 @@
             </span>
           </div>
         </div>
-        <div class="sm:hidden text-right">
+        <div class="sm:hidden text-right max-w-[40%]">
           <div class="text-[10px] uppercase text-slate-400 font-bold">Destinasi</div>
-          <div class="text-xs font-bold text-slate-200">Dataran Putra</div>
+          <div id="dest-label" class="text-xs font-bold text-slate-200 truncate">Dataran Putra</div>
         </div>
       </div>
 
-      <div class="flex items-center space-x-2 w-full sm:w-auto justify-end">
+      <div id="sim-controls" class="flex items-center space-x-2 w-full sm:w-auto justify-end">
         <button id="btn-toggle-sim" onclick="toggleSimulation()" class="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center justify-center space-x-2 shadow-lg shadow-cyan-600/30 transition active:scale-95">
           <i id="sim-icon" class="fa-solid fa-play"></i>
           <span id="sim-text">Pandu Simulasi</span>
@@ -167,6 +180,23 @@
           <i class="fa-solid fa-rotate-left text-sm"></i>
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- Search panel -->
+  <div id="search-panel" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden items-start justify-center p-4 pt-10">
+    <div class="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-2xl">
+      <div class="flex items-center gap-2">
+        <input id="search-input" type="search" autocomplete="off" placeholder="Cari destinasi (cth: Hospital Sultanah Aminah)" class="flex-1 min-w-0 bg-slate-800/90 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition">
+        <button id="btn-search-go" onclick="runSearch()" class="w-11 h-11 shrink-0 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white flex items-center justify-center transition active:scale-95" title="Cari">
+          <i class="fa-solid fa-magnifying-glass"></i>
+        </button>
+        <button onclick="closeSearch()" class="w-11 h-11 shrink-0 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition" title="Tutup">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div id="search-status" class="text-[11px] text-slate-400 mt-2.5 min-h-[14px]">Taip nama tempat atau alamat di Malaysia, kemudian tekan Enter.</div>
+      <div id="search-results" class="mt-2 max-h-72 overflow-y-auto space-y-1.5"></div>
     </div>
   </div>
 
@@ -231,34 +261,34 @@
   </div>
 
   <!-- Toast -->
-  <div id="toast-message" class="fixed top-28 left-1/2 -translate-x-1/2 z-50 bg-slate-800/95 text-slate-100 text-xs font-bold px-4 py-2.5 rounded-full border border-slate-700 shadow-2xl flex items-center space-x-2 pointer-events-none transition-all duration-300 opacity-0 -translate-y-4">
+  <div id="toast-message" class="fixed top-28 left-1/2 -translate-x-1/2 z-[60] max-w-[90vw] text-center bg-slate-800/95 text-slate-100 text-xs font-bold px-4 py-2.5 rounded-2xl border border-slate-700 shadow-2xl flex items-center space-x-2 pointer-events-none transition-all duration-300 opacity-0 -translate-y-4">
     <i class="fa-solid fa-circle-check text-cyan-400"></i>
     <span id="toast-text"></span>
   </div>
 
   <!-- Attribution -->
   <div class="fixed bottom-0.5 left-0 right-0 z-10 text-center text-[8px] text-slate-500 pointer-events-none">
-    © OpenStreetMap contributors · © CARTO · Laluan: OSRM
+    © OpenStreetMap contributors · Laluan: OSRM · Carian: Nominatim
   </div>
 
   <script>
     /* =====================================================================
        1. KONFIGURASI & DATA
        ===================================================================== */
-    // Titik mula & tamat (anggaran, OSRM akan "snap" ke jalan terdekat)
-    const START = { lat: 2.9152, lng: 101.6795, label: "Lebuh Sentosa" };
-    const END   = { lat: 2.9355, lng: 101.6965, label: "Dataran Putra" };
+    // Laluan demo (Putrajaya). Titik anggaran; OSRM akan "snap" ke jalan terdekat.
+    const DEFAULT_START = { lat: 2.9152, lng: 101.6795, label: "Lebuh Sentosa" };
+    const DEFAULT_END   = { lat: 2.9355, lng: 101.6965, label: "Dataran Putra" };
+    let START = { ...DEFAULT_START };
+    let END = { ...DEFAULT_END };   // null jika belum pilih destinasi (mod GPS)
+    let mode = 'sim';               // 'sim' = simulasi, 'gps' = GPS sebenar
 
-    // Laluan sandaran jika OSRM tidak dapat dicapai (garis lurus, hanya demo)
-    const FALLBACK_COORDS = [
-      [2.9152, 101.6795], [2.9238, 101.6845], [2.9320, 101.6853],
-      [2.9348, 101.6882], [2.9360, 101.6925], [2.9355, 101.6965]
-    ];
-
-    const SPEED_LIMIT = 60;            // km/j (nilai demo, OSRM awam tidak beri had laju)
-    const CRUISE_KMH = 55;             // kelajuan ketika memandu
+    const SPEED_LIMIT = 60;            // km/j (nilai demo, hanya dipaparkan dalam mod simulasi)
+    const CRUISE_KMH = 55;             // kelajuan jelajah simulasi & anggaran ETA
     const ALERT_AHEAD_METERS = 300;    // amaran bermula sekian meter sebelum insiden
     const ON_ROUTE_OFFSET_METERS = 80; // insiden dianggap "atas laluan" jika dalam jarak ini
+    const REROUTE_OFFSET_METERS = 60;  // jarak terpesong sebelum kira semula laluan
+    const REROUTE_COOLDOWN_MS = 10000; // jeda minimum antara kiraan semula
+    const ARRIVE_METERS = 25;          // dianggap tiba jika baki jarak sekian meter
     const INCIDENT_TTL_MS = 3 * 60 * 60 * 1000; // luput selepas 3 jam tanpa pengesahan
     const LS_INCIDENTS = "rondaler_incidents_v1";
     const LS_VOTES = "rondaler_votes_v1";
@@ -274,7 +304,7 @@
       try { localStorage.setItem(key, val); } catch (e) { memStore[key] = val; }
     }
 
-    // Elak XSS: nota pengguna tidak boleh dimasukkan terus ke innerHTML
+    // Elak XSS: teks pengguna / hasil carian tidak boleh dimasukkan terus ke innerHTML
     function esc(s) {
       return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
@@ -305,6 +335,7 @@
        ===================================================================== */
     const route = { coords: [], cum: [], total: 0, steps: [] };
     let usingFallback = false;
+    let routeRequestId = 0;
 
     function buildRoute(coords, rawSteps) {
       route.coords = coords;
@@ -326,8 +357,31 @@
       });
     }
 
-    async function loadRoute() {
+    function buildFallbackRoute() {
+      buildRoute([[START.lat, START.lng], [END.lat, END.lng]], [
+        { type: "depart", modifier: "", name: START.label, distance: 1 },
+        { type: "continue", modifier: "straight", name: "Laluan demo (garis lurus)", distance: 1 },
+        { type: "arrive", modifier: "", name: END.label, distance: 0 }
+      ]);
+      const t = route.total;
+      route.steps[0].startDist = 0; route.steps[0].endDist = Math.min(1, t);
+      route.steps[1].startDist = route.steps[0].endDist; route.steps[1].endDist = t;
+      route.steps[2].startDist = t; route.steps[2].endDist = t;
+    }
+
+    function clearRoute() {
+      route.coords = []; route.cum = []; route.total = 0; route.steps = [];
+      routeReady = false;
+      if (routePolyline) { map.removeLayer(routePolyline); routePolyline = null; }
+    }
+
+    async function loadRoute(opts = {}) {
+      if (!END) return;
+      const reqId = ++routeRequestId;
+      routeReady = false;
       const url = `https://router.project-osrm.org/route/v1/driving/${START.lng},${START.lat};${END.lng},${END.lat}?overview=full&geometries=geojson&steps=true`;
+
+      let coords = null, steps = null, fallback = false;
       try {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 9000);
@@ -338,8 +392,8 @@
         if (data.code !== "Ok" || !data.routes || !data.routes.length) throw new Error("Tiada laluan");
 
         const r = data.routes[0];
-        const coords = r.geometry.coordinates.map(c => [c[1], c[0]]);
-        const steps = [];
+        coords = r.geometry.coordinates.map(c => [c[1], c[0]]);
+        steps = [];
         r.legs.forEach(leg => leg.steps.forEach(s => {
           steps.push({
             type: s.maneuver.type,
@@ -349,43 +403,52 @@
             distance: s.distance
           });
         }));
+      } catch (err) {
+        console.warn("OSRM gagal:", err);
+        fallback = true;
+      }
+
+      if (reqId !== routeRequestId || !END) return; // ada permintaan lebih baru / dibatalkan
+
+      if (fallback) {
+        buildFallbackRoute();
+        usingFallback = true;
+        showToast("OSRM tak dapat dicapai. Guna garis lurus (demo sahaja)");
+      } else {
         buildRoute(coords, steps);
         usingFallback = false;
-        showToast("Laluan sebenar dimuatkan (OSRM)");
-      } catch (err) {
-        console.warn("OSRM gagal, guna laluan sandaran:", err);
-        buildRoute(FALLBACK_COORDS, [
-          { type: "depart", modifier: "", name: START.label, distance: 1 },
-          { type: "continue", modifier: "straight", name: "Laluan demo", distance: 1 },
-          { type: "arrive", modifier: "", name: END.label, distance: 0 }
-        ]);
-        // Bahagikan jarak demo: depart pendek, selebihnya lurus
-        route.steps[0].startDist = 0; route.steps[0].endDist = 1;
-        route.steps[1].startDist = 1; route.steps[1].endDist = route.total;
-        route.steps[2].startDist = route.total; route.steps[2].endDist = route.total;
-        usingFallback = true;
-        showToast("OSRM tak dapat dicapai. Guna laluan demo (garis lurus)");
+        showToast(opts.reroute ? "Laluan baru dikira" : "Laluan dimuatkan (OSRM)");
       }
-      applyRouteToMap();
+      applyRouteToMap(opts);
     }
 
-    function applyRouteToMap() {
+    function applyRouteToMap(opts = {}) {
+      const fit = opts.fit !== false;
       if (routePolyline) map.removeLayer(routePolyline);
       routePolyline = L.polyline(route.coords, {
         color: usingFallback ? '#f59e0b' : '#06b6d4',
         weight: 7, opacity: 0.9, lineCap: 'round', lineJoin: 'round'
       }).addTo(map);
-      map.fitBounds(routePolyline.getBounds(), { padding: [70, 70] });
+      if (fit) map.fitBounds(routePolyline.getBounds(), { padding: [70, 70] });
 
-      vehicleMarker.setLatLng(route.coords[0]);
-      traveled = 0;
+      traveled = 0; announcedStep = -1; arrived = false;
+      if (!opts.reroute) alertedIncidents.clear();
 
-      // Seed insiden demo di sepanjang laluan (hanya kali pertama)
-      if (lsGet(LS_INCIDENTS) === null) {
+      if (mode === 'sim') {
+        vehicleMarker.setLatLng(route.coords[0]);
+        setCarRotation(pointAtDistance(0).bearing);
+        if (!isSimulating) {
+          document.getElementById('sim-icon').className = "fa-solid fa-play";
+          document.getElementById('sim-text').innerText = "Pandu Simulasi";
+        }
+      }
+
+      // Seed insiden demo (hanya kali pertama, hanya mod simulasi)
+      if (mode === 'sim' && lsGet(LS_INCIDENTS) === null) {
         const now = Date.now();
         const mk = (id, type, frac, note, up, down) => {
           const p = pointAtDistance(route.total * frac);
-          return { id, type, title: getIncidentVisuals(type).text, lat: p.lat, lng: p.lng, votesUp: up, votesDown: down, note, lastConfirmed: now };
+          return { id, type, demo: true, title: getIncidentVisuals(type).text, lat: p.lat, lng: p.lng, votesUp: up, votesDown: down, note, lastConfirmed: now };
         };
         incidents = [
           mk("seed-1", "police", 0.30, "Sekatan jalan (data demo)", 14, 1),
@@ -396,8 +459,10 @@
       }
       computeProjections();
       renderIncidents();
-      updateHUD(0);
       routeReady = true;
+
+      if (mode === 'gps' && userPos) updateGpsProgress();
+      else updateHUD(0);
     }
 
     // Titik pada laluan mengikut jarak (meter)
@@ -411,16 +476,25 @@
       return { lat: a[0] + (b[0] - a[0]) * t, lng: a[1] + (b[1] - a[1]) * t, seg: i, bearing: calculateBearing(a, b) };
     }
 
-    // Proyeksi insiden ke laluan: jarak sisi (offset) dan kedudukan sepanjang laluan
-    const projections = {};
+    // Proyeksi titik ke garisan laluan (tepat pada segmen, bukan sekadar bucu terdekat)
     function projectToRoute(lat, lng) {
       let best = { offset: Infinity, routeDist: 0 };
-      for (let i = 0; i < route.coords.length; i++) {
-        const d = calculateDistance(lat, lng, route.coords[i][0], route.coords[i][1]);
-        if (d < best.offset) best = { offset: d, routeDist: route.cum[i] };
+      const kx = 111320 * Math.cos(lat * Math.PI / 180), ky = 110540;
+      for (let i = 0; i < route.coords.length - 1; i++) {
+        const a = route.coords[i], b = route.coords[i + 1];
+        const ax = (a[1] - lng) * kx, ay = (a[0] - lat) * ky;
+        const bx = (b[1] - lng) * kx, by = (b[0] - lat) * ky;
+        const dx = bx - ax, dy = by - ay;
+        const len2 = dx * dx + dy * dy;
+        let t = len2 ? -(ax * dx + ay * dy) / len2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        const d = Math.hypot(ax + t * dx, ay + t * dy);
+        if (d < best.offset) best = { offset: d, routeDist: route.cum[i] + t * (route.cum[i + 1] - route.cum[i]) };
       }
       return best;
     }
+
+    const projections = {};
     function computeProjections() {
       incidents.forEach(inc => { projections[inc.id] = projectToRoute(inc.lat, inc.lng); });
     }
@@ -463,24 +537,17 @@
     /* =====================================================================
        5. PETA
        ===================================================================== */
-    let map, vehicleMarker, routePolyline, incidentMarkerLayer, tileLayer;
+    let map, vehicleMarker, routePolyline, incidentMarkerLayer;
     let isDarkMode = true;
     let followVehicle = true;
     let routeReady = false;
 
-    const darkTileUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-    const lightTileUrl = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-
-    function makeTileLayer() {
-      return L.tileLayer(isDarkMode ? darkTileUrl : lightTileUrl, {
-        maxZoom: 19,
-        subdomains: isDarkMode ? 'abcd' : 'abc'
-      });
-    }
+    // Satu sumber tile (OSM). Mod gelap dibuat dengan penapis CSS, tiada API key diperlukan.
+    const tileUrl = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
     function initMap() {
       map = L.map('map', { center: [START.lat, START.lng], zoom: 15, zoomControl: false, attributionControl: false });
-      tileLayer = makeTileLayer().addTo(map);
+      L.tileLayer(tileUrl, { maxZoom: 19 }).addTo(map);
       incidentMarkerLayer = L.layerGroup().addTo(map);
 
       const carIcon = L.divIcon({
@@ -498,17 +565,20 @@
       map.on('click', onMapClick);
       map.on('dragstart', () => { followVehicle = false; });
 
+      document.getElementById('search-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter') runSearch();
+        if (e.key === 'Escape') closeSearch();
+      });
+
       loadIncidents();
       renderIncidents();
       showToast("Mengira laluan...");
-      loadRoute();
+      loadRoute({ fit: true });
     }
 
     function toggleMapTheme() {
       isDarkMode = !isDarkMode;
-      map.removeLayer(tileLayer);
-      tileLayer = makeTileLayer().addTo(map);
-      tileLayer.bringToBack();
+      document.getElementById('map').classList.toggle('dark-tiles', isDarkMode);
       document.getElementById('theme-icon').className = isDarkMode ? 'fa-solid fa-moon text-lg' : 'fa-solid fa-sun text-lg text-amber-400';
       showToast(isDarkMode ? "Peta: Mod Gelap" : "Peta: Mod Terang");
     }
@@ -523,17 +593,19 @@
        6. SIMULASI PEMANDUAN
        ===================================================================== */
     let isSimulating = false;
-    let traveled = 0;            // meter dari permulaan
+    let traveled = 0;            // meter dari permulaan laluan
     let timeScale = 1;           // 1x, 2x, 4x (masa dipercepat, bukan kelajuan kereta)
-    let currentSpeedF = 0;       // kelajuan float (km/j)
+    let currentSpeedF = 0;
     let speedNoise = 0;
     let animFrameId = null;
     let lastTimestamp = 0;
     let displayedRotation = 0;
     let announcedStep = -1;
+    let arrived = false;
     const alertedIncidents = new Set();
 
     function toggleSimulation() {
+      if (mode === 'gps') { showToast("Mod GPS sedang aktif. Matikan GPS untuk guna simulasi"); return; }
       if (!routeReady) { showToast("Laluan belum sedia, sila tunggu sebentar"); return; }
       if (traveled >= route.total - 0.5) resetSimulation();
 
@@ -563,14 +635,14 @@
     function resetSimulation() {
       isSimulating = false;
       if (animFrameId) cancelAnimationFrame(animFrameId);
-      traveled = 0; currentSpeedF = 0; announcedStep = -1;
+      traveled = 0; currentSpeedF = 0; announcedStep = -1; arrived = false;
       alertedIncidents.clear();
       dismissAlertBanner();
       setSpeedDisplay(0);
       document.getElementById('sim-icon').className = "fa-solid fa-play";
       document.getElementById('sim-text').innerText = "Pandu Simulasi";
 
-      if (routeReady) {
+      if (routeReady && mode === 'sim') {
         const p = pointAtDistance(0);
         vehicleMarker.setLatLng([p.lat, p.lng]);
         setCarRotation(p.bearing);
@@ -598,16 +670,16 @@
     function setSpeedDisplay(kmh) {
       const el = document.getElementById('current-speed');
       el.innerText = Math.round(kmh);
-      el.className = "text-3xl font-black " + (kmh > SPEED_LIMIT ? "text-red-400" : "text-cyan-400");
+      const over = mode === 'sim' && kmh > SPEED_LIMIT; // had laju hanya diketahui dalam mod demo
+      el.className = "text-3xl font-black " + (over ? "text-red-400" : "text-cyan-400");
     }
 
     function simulationLoop(timestamp) {
       if (!isSimulating) return;
 
-      const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1); // saat, dihadkan
+      const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1);
       lastTimestamp = timestamp;
 
-      // Kelajuan: perlahan sebelum belokan, selebihnya mengikut kelajuan jelajah
       const idx = stepIndexAt(traveled);
       const distToManeuver = route.steps[idx].endDist - traveled;
       const nextIsTurn = route.steps[idx + 1] && route.steps[idx + 1].type !== "arrive" && route.steps[idx + 1].modifier !== "straight";
@@ -628,7 +700,7 @@
         setSpeedDisplay(0);
         document.getElementById('sim-icon').className = "fa-solid fa-rotate-left";
         document.getElementById('sim-text').innerText = "Tiba. Main semula";
-        showToast("Anda telah tiba di " + END.label + "!");
+        showToast("Anda telah tiba di " + (END ? END.label : "destinasi") + "!");
         speakText("Anda telah tiba di destinasi anda.");
         return;
       }
@@ -649,13 +721,267 @@
       const next = route.steps[idx + 1];
       if (!next || announcedStep === idx || dist > 150) return;
       announcedStep = idx;
-      const d = describeStep(next);
       if (next.type === "arrive") return;
+      const d = describeStep(next);
       speakText(`Dalam ${Math.max(10, Math.round(dist / 10) * 10)} meter, ${d.text}`);
     }
 
     /* =====================================================================
-       7. HUD
+       7. MOD GPS SEBENAR
+       ===================================================================== */
+    let gpsWatchId = null;
+    let userPos = null;          // { lat, lng, accuracy }
+    let gpsSpeedAvg = 0;         // km/j (purata bergerak)
+    let lastReroute = 0;
+    let offRouteCount = 0;
+    let wakeLock = null;
+
+    function setGpsButton(active) {
+      const btn = document.getElementById('btn-gps-mode');
+      btn.classList.toggle('bg-emerald-600', active);
+      btn.classList.toggle('text-white', active);
+      btn.classList.toggle('bg-slate-900/90', !active);
+      btn.classList.toggle('text-emerald-400', !active);
+      document.getElementById('gps-label').innerText = active ? "GPS: HIDUP" : "GPS: MATI";
+    }
+
+    function setHudEmpty(top, sub) {
+      document.getElementById('turn-icon').className = "fa-solid fa-magnifying-glass";
+      document.getElementById('turn-distance').innerText = "--";
+      document.getElementById('turn-text').innerText = top;
+      document.getElementById('road-name').innerText = sub;
+      document.getElementById('speed-limit').innerText = mode === 'sim' ? SPEED_LIMIT : "--";
+      document.getElementById('remaining-dist').innerText = "--";
+      document.getElementById('eta-min').innerText = "(--)";
+      document.getElementById('eta-time').innerText = "--:--";
+    }
+
+    async function requestWakeLock() {
+      try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { /* tidak disokong / ditolak */ }
+    }
+    function releaseWakeLock() {
+      try { if (wakeLock) wakeLock.release(); } catch (e) { /* abaikan */ }
+      wakeLock = null;
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && mode === 'gps') requestWakeLock();
+    });
+
+    function toggleGpsMode() {
+      if (mode === 'gps') { stopGps(); return; }
+      if (!('geolocation' in navigator)) { showToast("Pelayar ini tidak menyokong GPS"); return; }
+      if (!window.isSecureContext) { showToast("GPS perlukan HTTPS. Guna pautan GitHub Pages anda"); return; }
+
+      if (isSimulating) toggleSimulation(); // jeda dahulu (masih mod simulasi di sini)
+
+      mode = 'gps';
+      routeRequestId++;      // batalkan permintaan laluan yang sedang berjalan
+      clearRoute();
+      END = null; userPos = null; gpsSpeedAvg = 0;
+      traveled = 0; announcedStep = -1; arrived = false; offRouteCount = 0;
+      alertedIncidents.clear();
+      dismissAlertBanner();
+      renderIncidents(); // sembunyikan data demo
+
+      setGpsButton(true);
+      document.getElementById('sim-controls').classList.add('opacity-40', 'pointer-events-none');
+      document.getElementById('dest-label').innerText = "Belum dipilih";
+      setHudEmpty("MENCARI GPS", "Menunggu isyarat lokasi...");
+      setSpeedDisplay(0);
+      followVehicle = true;
+      unlockAudio();
+
+      gpsWatchId = navigator.geolocation.watchPosition(onGpsPosition, onGpsError, {
+        enableHighAccuracy: true, maximumAge: 1000, timeout: 20000
+      });
+      requestWakeLock();
+      showToast("Mencari isyarat GPS...");
+    }
+
+    function stopGps() {
+      if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
+      releaseWakeLock();
+      userPos = null; gpsSpeedAvg = 0;
+      mode = 'sim';
+      setGpsButton(false);
+      document.getElementById('sim-controls').classList.remove('opacity-40', 'pointer-events-none');
+
+      START = { ...DEFAULT_START };
+      END = { ...DEFAULT_END };
+      document.getElementById('dest-label').innerText = END.label;
+      routeRequestId++;
+      clearRoute();
+      resetSimulation();
+      renderIncidents();
+      showToast("Kembali ke mod simulasi");
+      loadRoute({ fit: true });
+    }
+
+    function onGpsPosition(pos) {
+      if (mode !== 'gps') return;
+      const c = pos.coords;
+      const first = !userPos;
+      userPos = { lat: c.latitude, lng: c.longitude, accuracy: c.accuracy || 0 };
+      vehicleMarker.setLatLng([userPos.lat, userPos.lng]);
+
+      const kmh = (c.speed != null && !isNaN(c.speed)) ? Math.max(0, c.speed * 3.6) : 0;
+      gpsSpeedAvg = gpsSpeedAvg * 0.7 + kmh * 0.3;
+      setSpeedDisplay(kmh);
+      if (c.heading != null && !isNaN(c.heading) && kmh > 4) setCarRotation(c.heading);
+
+      if (first) {
+        map.setView([userPos.lat, userPos.lng], 17, { animate: true });
+        if (END) {
+          START = { lat: userPos.lat, lng: userPos.lng, label: "Lokasi anda" };
+          showToast("GPS sedia. Mengira laluan...");
+          loadRoute({ fit: true });
+        } else {
+          setHudEmpty("CARI DESTINASI", "Tekan butang carian di kanan");
+          showToast("GPS sedia. Tekan butang carian untuk pilih destinasi");
+        }
+      } else if (followVehicle) {
+        map.panTo([userPos.lat, userPos.lng], { animate: true });
+      }
+
+      if (routeReady) updateGpsProgress();
+    }
+
+    function onGpsError(err) {
+      const msgs = {
+        1: "Kebenaran lokasi ditolak. Benarkan lokasi untuk laman ini dalam tetapan pelayar",
+        2: "Lokasi tidak dapat dikesan. Cuba di kawasan terbuka",
+        3: "GPS mengambil masa terlalu lama. Cuba lagi"
+      };
+      showToast(msgs[err.code] || "Ralat GPS");
+      if (err.code === 1) stopGps();
+    }
+
+    function updateGpsProgress() {
+      if (!userPos || !route.steps.length) return;
+      const p = projectToRoute(userPos.lat, userPos.lng);
+      traveled = p.routeDist;
+
+      // Terpesong dari laluan? Kira semula dari lokasi semasa
+      const tol = Math.max(REROUTE_OFFSET_METERS, userPos.accuracy * 1.5);
+      if (p.offset > tol) {
+        offRouteCount++;
+        const now = Date.now();
+        if (offRouteCount >= 3 && now - lastReroute > REROUTE_COOLDOWN_MS && END) {
+          lastReroute = now; offRouteCount = 0;
+          START = { lat: userPos.lat, lng: userPos.lng, label: "Lokasi anda" };
+          showToast("Keluar dari laluan. Mengira semula...");
+          speakText("Mengira semula laluan.");
+          loadRoute({ fit: false, reroute: true });
+          return;
+        }
+      } else {
+        offRouteCount = 0;
+      }
+
+      updateHUD(traveled);
+      checkIncidentProximity();
+      const idx = stepIndexAt(traveled);
+      announceTurn(idx, route.steps[idx].endDist - traveled);
+
+      if (!arrived && route.total - traveled <= ARRIVE_METERS) {
+        arrived = true;
+        showToast("Anda telah tiba di " + (END ? END.label : "destinasi") + "!");
+        speakText("Anda telah tiba di destinasi anda.");
+      }
+    }
+
+    /* =====================================================================
+       8. CARIAN DESTINASI (Nominatim / OpenStreetMap)
+       ===================================================================== */
+    let searchResults = [];
+
+    function openSearch() {
+      const panel = document.getElementById('search-panel');
+      panel.classList.remove('hidden');
+      panel.classList.add('flex');
+      setTimeout(() => document.getElementById('search-input').focus(), 50);
+    }
+
+    function closeSearch() {
+      const panel = document.getElementById('search-panel');
+      panel.classList.add('hidden');
+      panel.classList.remove('flex');
+    }
+
+    async function runSearch() {
+      const input = document.getElementById('search-input');
+      const status = document.getElementById('search-status');
+      const list = document.getElementById('search-results');
+      const btn = document.getElementById('btn-search-go');
+      const q = input.value.trim();
+      if (q.length < 3) { status.innerText = "Taip sekurang-kurangnya 3 huruf."; return; }
+
+      status.innerText = "Mencari...";
+      list.innerHTML = "";
+      btn.disabled = true; btn.classList.add('opacity-50');
+
+      // Utamakan hasil berdekatan lokasi anda / pusat peta semasa
+      const centre = userPos ? [userPos.lat, userPos.lng] : [map.getCenter().lat, map.getCenter().lng];
+      const d = 1.0;
+      const viewbox = `${centre[1] - d},${centre[0] + d},${centre[1] + d},${centre[0] - d}`;
+      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=my&accept-language=ms&viewbox=${viewbox}&q=${encodeURIComponent(q)}`;
+
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 10000);
+        const res = await fetch(url, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+
+        searchResults = data.map(r => ({
+          lat: parseFloat(r.lat), lng: parseFloat(r.lon),
+          name: r.name || (r.display_name || "").split(",")[0],
+          full: r.display_name || ""
+        })).filter(r => !isNaN(r.lat) && !isNaN(r.lng));
+
+        if (!searchResults.length) {
+          status.innerText = "Tiada hasil. Cuba nama lain atau tambah nama bandar.";
+        } else {
+          status.innerText = "Pilih destinasi:";
+          list.innerHTML = searchResults.map((r, i) => `
+            <button onclick="pickResult(${i})" class="w-full text-left px-3 py-2.5 rounded-xl bg-slate-800/80 hover:bg-cyan-700/40 border border-slate-700 transition">
+              <div class="text-sm font-bold text-white truncate">${esc(r.name)}</div>
+              <div class="text-[11px] text-slate-400 truncate">${esc(r.full)}</div>
+            </button>`).join('');
+        }
+      } catch (err) {
+        console.warn("Carian gagal:", err);
+        status.innerText = "Carian gagal. Semak sambungan internet dan cuba lagi.";
+      } finally {
+        btn.disabled = false; btn.classList.remove('opacity-50');
+      }
+    }
+
+    function pickResult(i) {
+      const r = searchResults[i];
+      if (!r) return;
+      closeSearch();
+      setDestination(r.lat, r.lng, r.name);
+    }
+
+    function setDestination(lat, lng, label) {
+      if (isSimulating) toggleSimulation(); // jeda simulasi
+      END = { lat, lng, label };
+      document.getElementById('dest-label').innerText = label;
+
+      if (mode === 'gps') {
+        if (!userPos) { showToast("Menunggu isyarat GPS sebelum kira laluan..."); return; }
+        START = { lat: userPos.lat, lng: userPos.lng, label: "Lokasi anda" };
+      } else {
+        showToast("Mod simulasi bermula dari Putrajaya. Hidupkan GPS untuk mula dari lokasi anda");
+      }
+      offRouteCount = 0;
+      loadRoute({ fit: true });
+    }
+
+    /* =====================================================================
+       9. HUD
        ===================================================================== */
     function updateHUD(d) {
       if (!route.steps.length) return;
@@ -668,12 +994,13 @@
       document.getElementById('turn-icon').className = `fa-solid ${info.icon}`;
       document.getElementById('turn-distance').innerText = next === cur ? "0 m" : formatDist(dToNext);
       document.getElementById('turn-text').innerText = info.text;
-      document.getElementById('road-name').innerText = next.type === "arrive" ? END.label : (next.name || "Jalan tanpa nama");
-      document.getElementById('speed-limit').innerText = SPEED_LIMIT;
+      document.getElementById('road-name').innerText = next.type === "arrive" ? (END ? END.label : "Destinasi") : (next.name || "Jalan tanpa nama");
+      document.getElementById('speed-limit').innerText = mode === 'sim' ? SPEED_LIMIT : "--";
 
-      // Baki jarak & ETA (berdasarkan kelajuan jelajah, masa sebenar)
+      // Baki jarak & ETA
       const remaining = Math.max(0, route.total - d);
-      const minutes = Math.max(1, Math.ceil(remaining / (CRUISE_KMH * 1000 / 60)));
+      const etaKmh = (mode === 'gps' && gpsSpeedAvg > 10) ? gpsSpeedAvg : CRUISE_KMH;
+      const minutes = Math.max(1, Math.ceil(remaining / (etaKmh * 1000 / 60)));
       const eta = new Date(Date.now() + minutes * 60000);
       document.getElementById('remaining-dist').innerText = formatDist(remaining);
       document.getElementById('eta-min').innerText = remaining < 5 ? "(tiba)" : `(~${minutes} min)`;
@@ -682,10 +1009,15 @@
       updateTrafficStatus(d);
     }
 
+    // Insiden yang dipaparkan / diberi amaran: data demo hanya dalam mod simulasi
+    function activeIncidents() {
+      return mode === 'sim' ? incidents : incidents.filter(i => !isDemo(i));
+    }
+
     function updateTrafficStatus(d) {
       const el = document.getElementById('traffic-status');
       let nearest = null;
-      incidents.forEach(inc => {
+      activeIncidents().forEach(inc => {
         if (inc.type !== 'traffic' && inc.type !== 'accident') return;
         const p = projections[inc.id];
         if (!p || p.offset > ON_ROUTE_OFFSET_METERS) return;
@@ -703,10 +1035,10 @@
     }
 
     /* =====================================================================
-       8. AMARAN GEOFENCE (hanya insiden DI HADAPAN pada laluan)
+       10. AMARAN GEOFENCE (hanya insiden DI HADAPAN pada laluan)
        ===================================================================== */
     function checkIncidentProximity() {
-      incidents.forEach(inc => {
+      activeIncidents().forEach(inc => {
         if (alertedIncidents.has(inc.id)) return;
         const p = projections[inc.id];
         if (!p || p.offset > ON_ROUTE_OFFSET_METERS) return;
@@ -743,10 +1075,12 @@
     }
 
     /* =====================================================================
-       9. INSIDEN KOMUNITI (disimpan dalam localStorage)
+       11. INSIDEN KOMUNITI (disimpan dalam localStorage)
        ===================================================================== */
     let incidents = [];
     let votes = {};
+
+    function isDemo(inc) { return !!inc.demo || String(inc.id).startsWith('seed-'); }
 
     function getIncidentVisuals(type) {
       switch (type) {
@@ -780,7 +1114,7 @@
     function renderIncidents() {
       incidentMarkerLayer.clearLayers();
 
-      incidents.forEach(inc => {
+      activeIncidents().forEach(inc => {
         const visual = getIncidentVisuals(inc.type);
         const markerIcon = L.divIcon({
           className: 'custom-incident-marker',
@@ -851,7 +1185,7 @@
     }
 
     /* =====================================================================
-       10. MODAL LAPORAN & PIN PETA
+       12. MODAL LAPORAN & PIN PETA
        ===================================================================== */
     let customPinDropMode = false;
     let pendingReportCoords = null;
@@ -930,7 +1264,7 @@
     }
 
     /* =====================================================================
-       11. AUDIO & SUARA (satu AudioContext dikongsi)
+       13. AUDIO & SUARA (satu AudioContext dikongsi)
        ===================================================================== */
     let voiceAlertsEnabled = true;
     let audioCtx = null;
@@ -979,7 +1313,7 @@
     }
 
     /* =====================================================================
-       12. TOAST & MULA
+       14. TOAST & MULA
        ===================================================================== */
     let toastTimeout = null;
     function showToast(message) {
@@ -991,7 +1325,7 @@
       toastTimeout = setTimeout(() => {
         toast.classList.remove('opacity-100', 'translate-y-0');
         toast.classList.add('opacity-0', '-translate-y-4');
-      }, 3000);
+      }, 3500);
     }
 
     window.addEventListener('load', initMap);
